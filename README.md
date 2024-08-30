@@ -1,6 +1,16 @@
 # Devlog
 
+![Devlog](./devlog.png)
+
 Devlog is a powerful tool that automatically generates (b)log posts from your Git commit history, providing a natural language summary of your development progress.
+
+It uses [ollama](https://github.com/ollama/ollama) to generate the blog posts locally so it never sends your data to third-party servers.
+
+## Requirements
+
+- [ollama](https://github.com/ollama/ollama) capable of running llama3
+- [git](https://git-scm.com/)
+- [python](https://www.python.org/)
 
 ## Description
 
