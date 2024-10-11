@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Ollamator:
-    def __init__(self, ollama_url, model="llama3"):
+    def __init__(self, ollama_url, model="llama3.1:8b"):
         self.ollama_url = ollama_url
         self.model = model
 

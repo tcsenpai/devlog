@@ -2,4 +2,11 @@
 temp_repo
 .venv
 output
+output_*
+.vscode
+commit_cache.json
+src/devlog/__pycache__
+src/devlog/__pycache__/*.pyc
 __pycache__
+*.pyc
+timeframes_config.json

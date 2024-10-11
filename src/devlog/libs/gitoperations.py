@@ -5,6 +5,9 @@ from git.exc import InvalidGitRepositoryError
 import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
+import json
+from dateutil.parser import parse
+from dateutil.tz import tzutc
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,34 @@ class GitOperations:
         self.temp_dir = None
         self.commits = []
         self.default_branch = os.getenv('DEFAULT_BRANCH', 'main')
+        self.cache_file = os.path.join(os.getcwd(), 'commit_cache.json')
+        self.commit_cache = self._load_cache()
+        self.skip_processed = os.getenv('SKIP_PROCESSED_COMMITS', 'false').lower() == 'true'
+
+    def _load_cache(self):
+        if os.path.exists(self.cache_file):
+            with open(self.cache_file, 'r') as f:
+                return json.load(f)
+        return {}
+
+    def _save_cache(self):
+        with open(self.cache_file, 'w') as f:
+            json.dump(self.commit_cache, f)
+
+    def elaborate_commit(self, commit):
+        if commit.hexsha in self.commit_cache:
+            return self.commit_cache[commit.hexsha]
+
+        elaborated_commit = {
+            'hexsha': commit.hexsha,
+            'author': str(commit.author),
+            'date': commit.committed_datetime.isoformat(),
+            'message': commit.message.strip()
+        }
+
+        self.commit_cache[commit.hexsha] = elaborated_commit
+        self._save_cache()
+        return elaborated_commit
 
     def list_commits(self):
         if self.repo_path_or_url.startswith('http://') or self.repo_path_or_url.startswith('https://'):
@@ -34,7 +65,7 @@ class GitOperations:
             logger.info(f"Found {len(commits)} commits")
             
             for commit in commits:
-                self.commits.append(commit)
+                self.commits.append(self.elaborate_commit(commit))
                 print(f"Commit: {commit.hexsha}")
                 print(f"Author: {commit.author}")
                 print(f"Date: {commit.committed_datetime}")
@@ -69,7 +100,7 @@ class GitOperations:
             logger.info(f"Cleaning up temporary directory {self.temp_dir}")
             shutil.rmtree(self.temp_dir)
 
-    def group_commits_by_days(self, days=None):
+    def group_commits_by_days(self, days=None, start_date=None, end_date=None):
         if days is None:
             days = int(os.getenv('GROUP_COMMITS_DAYS', 30))
 
@@ -78,29 +109,56 @@ class GitOperations:
 
         grouped_commits = defaultdict(list)
         
+        # Convert start_date and end_date to UTC aware datetimes
+        if start_date:
+            start_date = start_date.replace(tzinfo=tzutc())
+        if end_date:
+            end_date = end_date.replace(tzinfo=tzutc())
+
+        # Filter commits based on date range and skip processed commits if enabled
+        filtered_commits = []
+        for commit in self.commits:
+            commit_date = parse(commit['date']).replace(tzinfo=tzutc())
+            if (start_date is None or commit_date >= start_date) and \
+               (end_date is None or commit_date <= end_date):
+                if not self.skip_processed or commit['hexsha'] not in self.commit_cache:
+                    filtered_commits.append(commit)
+                    if self.skip_processed:
+                        self.commit_cache[commit['hexsha']] = True
+        
         # Sort commits by date (oldest first)
-        sorted_commits = sorted(self.commits, key=lambda c: c.committed_datetime)
+        sorted_commits = sorted(filtered_commits, key=lambda c: c['date'])
         
         if not sorted_commits:
-            return []
+            return {}
 
-        # Get the date of the oldest commit
-        current_date = sorted_commits[0].committed_datetime.date()
-        end_date = current_date + timedelta(days=days)
+        # Group commits by days
+        current_date = parse(sorted_commits[0]['date']).replace(tzinfo=tzutc()).date()
+        end_group_date = current_date + timedelta(days=days)
         group = []
 
         for commit in sorted_commits:
-            commit_date = commit.committed_datetime.date()
-            if commit_date <= end_date:
+            commit_date = parse(commit['date']).replace(tzinfo=tzutc()).date()
+            if commit_date <= end_group_date:
                 group.append(commit)
             else:
-                grouped_commits[f"{current_date} to {end_date}"] = group
+                grouped_commits[f"{current_date} to {end_group_date}"] = group
                 current_date = commit_date
-                end_date = current_date + timedelta(days=days)
+                end_group_date = current_date + timedelta(days=days)
                 group = [commit]
 
         # Add the last group
         if group:
-            grouped_commits[f"{current_date} to {end_date}"] = group
+            grouped_commits[f"{current_date} to {end_group_date}"] = group
+
+        # Save the updated cache
+        if self.skip_processed:
+            self._save_cache()
 
         return dict(grouped_commits)
+
+    def delete_cache(self):
+        if os.path.exists(self.cache_file):
+            os.remove(self.cache_file)
+            logger.info(f"Deleted cache file: {self.cache_file}")
+        self.commit_cache = {}

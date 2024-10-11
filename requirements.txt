@@ -2,3 +2,4 @@ python-dotenv
 gitpython
 markdown
 requests
+python-dateutil

@@ -1,0 +1,10 @@
+{
+    "timeframes": [
+      {
+        "start_date": "2024-09-01",
+        "end_date": "2024-09-30",
+        "use_cache": true,
+        "grouping_days": 7
+      }
+    ]
+  }
